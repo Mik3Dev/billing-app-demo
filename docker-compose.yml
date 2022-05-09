@@ -1,0 +1,92 @@
+version: '3.1'
+
+services:
+  backend_bff:
+    container_name: backend_bff
+    build:
+      context: ./backend-bff
+      dockerfile: Dockerfile
+    depends_on:
+      - "rabbitmq_srv"
+    command: sh -c '/bin/wait-for-it.sh rabbitmq_srv:5672 --timeout=30 -- npm start'
+    environment:
+      BILLING_STORAGE_URL: http://billing_store_srv
+      RABBITMQ_URL: amqp://user:password@rabbitmq_srv:5672
+      FRONTEND_URL: http://localhost:3000
+    ports:
+      - '4000:3000'
+    networks:
+      - backend_network
+
+  billing_store_srv:
+    container_name: billing_store_srv
+    build:
+      context: ./billing-store-service
+      dockerfile: Dockerfile
+    depends_on:
+      - "billing_store_db_srv"
+      - "rabbitmq_srv"
+    command: sh -c '/bin/wait-for-it.sh rabbitmq_srv:5672 --timeout=30 -- npm start'
+    environment:
+      TAX_PCT: 19
+      MONGO_URL: mongodb://root:password@billing_store_db_srv:27017/
+      RABBITMQ_URL: amqp://user:password@rabbitmq_srv:5672
+    networks:
+      - backend_network
+  
+  billing_store_db_srv:
+    container_name: billing_store_db_srv
+    image: mongo:5.0.8-focal
+    ports:
+      - '27017:27017'
+    volumes:
+      - ./mongo_data/:/data/db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: password
+    networks:
+      - backend_network
+
+  billing_email_srv:
+    container_name: billing_email_srv
+    build:
+      context: ./billing-email-service
+      dockerfile: Dockerfile
+    hostname: billing_email_srv
+    depends_on:
+      - "rabbitmq_srv"
+    command: sh -c '/bin/wait-for-it.sh rabbitmq_srv:5672 --timeout=30 -- npm start'
+    environment:
+      EMAIL_HOST: smtp.ethereal.email
+      EMAIL_PORT: 587
+      EMAIL_USER: qv5xbn6jc5gzyp7y@ethereal.email
+      EMAIL_PASS: r9y9EfsjSJEdTzsTG5
+      RABBITMQ_URL: amqp://user:password@rabbitmq_srv:5672
+    networks:
+      - backend_network
+
+  rabbitmq_srv:
+    container_name: rabbitmq_srv
+    image: rabbitmq:3.10.0-alpine
+    hostname: rabbitmq_srv
+    volumes:
+      - ./rabbitqm_data/:/var/lib/rabbitmq
+    ports:
+      - '5672:5672'
+    environment:
+      RABBITMQ_DEFAULT_USER: user
+      RABBITMQ_DEFAULT_PASS: password
+    networks:
+      - backend_network
+
+  frontend_srv:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    depends_on:
+      - backend_bff
+    ports:
+      - '3000:80'
+    
+networks:
+  backend_network:
